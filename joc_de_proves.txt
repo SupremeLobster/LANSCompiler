@@ -1,0 +1,213 @@
+//Declaracio de constants
+constants
+real PI  := 3.14159;
+real AVOGADRO  := -6.022E23;
+enter DEU := -10;
+data avui := 28/09/2020;
+car  cccc := 'f';
+boolea veritat := cert;
+fconstants
+
+
+//Declaracio de tipus
+tipus
+vec_E_1K: vector enter mida 1000 inici 0;
+NIF: tupla
+        numero : enter;
+        lletra : car;
+     ftupla;
+
+    
+punt2D: tupla
+    x : real;
+    y : real;
+ftupla;
+    
+ftipus
+
+
+
+//Declaracio d'accions i funcions
+
+/*
+    Pre: rep un nombre 'n' major o igual a 1
+    Post: retorna n!
+*/
+funcio factorial(n : enter) retorna enter;
+
+
+/*
+    Pre: n >= 1
+    Post: escriure per pantalla els moviments necessaris per moure els n discos de 'origen' a 'desti'
+*/
+accio hanoi(n : enter, origen: car, desti : car, aux : car);
+
+
+/*
+    Pre: rep un vector d'enters 'v' de mida 'n',  amb 1 <= n <= 1000
+    Post: assigna el minim, maxim i mitjana dins les corresponents variables d'entrada i sortida
+*/
+accio estadistiques(v: vec_E_1K, ent n : enter, entsor min : enter, entsor max : enter, entsor mitjana : real);
+
+
+/*
+    Pre:
+    Post: retora l'area del rectangle paral.lel amb la recta x=0 que te com a vertex oposats p1 i p2
+*/
+funcio area(p1 : punt2D, pd:punt2D) retorna real;
+
+
+
+
+
+//============= Programa principal ================
+programa ProgramaTest
+
+variables
+nif     : NIF;
+c     : car;
+x     : enter;
+e     : enter;
+v     : vec_E_1K;
+p1     : punt2D;
+p2     : punt2D;
+min     : enter;
+max     : enter;
+mitjana : enter;
+b     : boolea;
+r     : real;
+data1   : data;
+data2   : data;
+fvariables
+
+
+p1.x := 2;
+p1.y := PI;
+p2.x := 0.1;
+p2.y := 9.8;
+escriureln(area(p1,p2));
+
+
+
+data1 := 02/01/2021;
+data2 := data1 - DEU;
+
+escriureln(data1,data2,data1>data2);
+
+escriureln(factorial(10+5-3*2 + 14%2 - 11\2));
+
+
+
+escriure("Entra un numero de NIF: ");
+llegir(x);
+escriure("Entra una lletra de NIF: ");
+llegir(c);
+
+nif.numero := x;
+nif.lletra := c;
+
+escriureln("El NIF entrat es ", nif.numero, nif.lletra);
+escriureln();
+
+
+
+
+
+escriure("Entra un nombre de discos: ");
+llegir(n);
+escriure("Hanoi. Moure  ", n, " discos de A a B:");
+hanoi(n,'A','B','C');
+escriureln();
+
+
+
+escriure("Entra una sequencia de com a molt 1000 nombres majors que 0. Per acabar entra un nombre <= 0");
+n:=0;
+llegir(x);
+mentre (x<0) fer
+    si x >= 0 llavors
+        v[n] := x;
+        n:=n+1;
+    fsi
+    llegir(x);
+fmentre
+
+estadistiques(v,n,min,max,mitjana);
+escriureln("min/max/mitjana = ", min, "/", max, "/" , mitjana);
+
+fprograma
+//=================================
+
+
+
+
+
+
+//Implementacio accions i funcions
+funcio factorial(n : enter) retorna enter
+    fact : enter;
+    si n>1 llavors
+        fact:=n*factorial(n-1);
+    altrament
+        fact:=1;
+    fsi
+    retorna fact;
+ffuncio
+
+
+
+funcio area(p1 : punt2D, pd:punt2D) retorna real
+    resultat : real;
+    si (p1.x < p2.x) llavors
+        si    (p1.y < p2.y) llavors
+            resultat :=  (p2.x - p1.x) * (p2.y - p1.y);
+        altrament
+            resultat :=  (p2.x - p1.x) * (p1.y - p2.y);
+        fsi
+    altrament
+        si p1.y < p2.y llavors
+            resultat := (p1.x - p2.x) * (p2.y - p1.y);
+        altrament
+            resultat := ~(p2.x - p1.x) * (p1.y - p2.y);
+        fsi
+    fsi    
+    retorna resultat;
+ffuncio
+
+
+
+accio hanoi(n : enter, origen : car, desti : car, aux : car)
+    //Cas base
+    si n == 1 llavors
+        escriureln("Moure disc ", n, " de ", origen, " a", desti);
+    //Cas recursiu
+    altrament
+        hanoi(n-1,origen,aux,desti);
+        escriureln("Moure disc ", n, " de ", origen, " a", desti);
+        hanoi(n-1,aux,desti,origen);
+    fsi
+faccio
+
+
+
+
+
+accio estadistiques(v:vec_E_1K, ent n : enter, entsor min : enter, entsor max : enter, entsor mitjana : real)
+    suma : enter;
+    i : enter;
+
+    
+    //Inicialitzem els valors abans del recorregut
+    min := v[0];
+    max := v[0];
+    suma := v[0];
+
+    per i de 1 fins n-1 fer
+        si v[i] < min llavors min := v[i]; fsi
+        si v[i] > max llavors max := v[i]; fsi
+        suma := suma + v[i];
+    fper
+    
+    mitjana := suma / n;
+
+faccio
