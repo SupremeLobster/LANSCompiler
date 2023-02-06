@@ -4,10 +4,50 @@
 
 grammar LANSGrammar;
 
-// Regla sintàctica
-inici: dec_constants?  dec_tipus?  dec_acc_func?  programa  imp_acc_func? EOF;
+@header{
+    import java.io.*;
+    import java.util.Vector;
+}
 
-programa: TK_PC_PROGRAMA  TK_IDENT dec_variables? (sentencia)+ TK_PC_FPROGRAMA;
+@parser::members{
+     SymTable<Registre> TS = new SymTable<Registre>(1000);
+     Bytecode BC = new Bytecode("ResultatsFitxerCompilat");
+     boolean error = false;
+     Long nVars = 0L;
+
+     //override method
+     public void notifyErrorListeners(Token offendingToken, String msg, RecognitionException e){
+          super.notifyErrorListeners(offendingToken,msg,e);
+          error=true;
+     }
+}
+
+// Regles sintàctiques i semàntiques
+inici
+    @init {
+        System.out.println("Inici de compilació");
+        Vector<Long> trad = new Vector<Long>();
+    }
+    @after {
+        trad.add(BC.RETURN);
+        BC.addMainCode(1000L,1000L,trad);
+        BC.write();
+        System.out.println("Fi de compilació");
+    }
+    : dec_constants?
+    dec_tipus?  dec_acc_func?
+    prog = programa {trad.addAll($prog.trad);}
+    imp_acc_func?
+    EOF;
+
+programa returns [Vector<Long> trad]
+    @init {
+        System.out.println("Inici de programa");
+    }
+    @after {
+        System.out.println("Fi de programa");
+    }
+    : TK_PC_PROGRAMA  TK_IDENT dec_variables? (sentencia)+ TK_PC_FPROGRAMA;
 
 
 dec_constants: TK_PC_CONSTANTS  (assign_constant)+  TK_PC_FCONSTANTS;
@@ -61,7 +101,15 @@ per: TK_PC_PER TK_IDENT TK_PC_DE expressio TK_PC_FINS expressio TK_PC_FER (sente
 repetir: TK_PC_REPETIR (sentencia)+ TK_PC_FINSQUE expressio TK_SEMI;
 crida_accio: TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
 
-valor_constant : TK_ENTER | TK_REAL | TK_CAR | TK_BOOLEA | TK_DATA | TK_STRING | TK_OP_MINUS TK_ENTER | TK_OP_MINUS TK_REAL ;
+valor_constant returns [String type, String value]:
+    val = TK_ENTER { $type = "enter"; $value = $val.text; }
+    | val = TK_REAL { $type = "real"; $value = $val.text; }
+    | val = TK_CAR { $type = "car"; $value = $val.text; }
+    | val = TK_BOOLEA { $type = "bool"; $value = $val.text; }
+    | val = TK_DATA { $type = "data"; $value = $val.text; }
+    | val = TK_STRING { $type = "string"; $value = $val.text; }
+    | val = TK_OP_MINUS TK_ENTER  // TODO Cal arreglar-ho semanticament perque no es pot fer aixi
+    | val = TK_OP_MINUS TK_REAL ; // TODO Cal arreglar-ho semanticament perque no es pot fer aixi
 
 
 
@@ -92,7 +140,7 @@ TK_LBRACKET : '[';
 TK_RBRACKET : ']';
 TK_EXPONENT : 'E';
 TK_ASSIGN_VALUE: ':=';
-TK_PC_PROGRAMA: 'programa'  {System.out.println("he reconegut programa")};
+TK_PC_PROGRAMA: 'programa'  {System.out.println("he reconegut programa");};
 TK_PC_FPROGRAMA: 'fprograma'  ;
 TK_PC_CONSTANTS: 'constants' ;
 TK_PC_FCONSTANTS: 'fconstants' ;
