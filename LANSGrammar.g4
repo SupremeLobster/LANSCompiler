@@ -10,10 +10,19 @@ grammar LANSGrammar;
 }
 
 @parser::members{
-     SymTable<Registre> TS = new SymTable<Registre>(1000);
+     CollectionSymTable CTS = new CollectionSymTable(1000);
      Bytecode BC = new Bytecode("ResultatsFitxerCompilat");
+
+     SymTable<Scope> TScopes = new SymTable<Scope>(20);
+     SymTable<VectorDB> TVectorsDB = new SymTable<VectorDB>(20);
      boolean error = false;
      Long nVars = 0L;
+
+     Counter counter = new Counter();
+
+     Scope s_global = new Scope(null, "s_global");
+
+     Long endLine;
 
      //override method
      public void notifyErrorListeners(Token offendingToken, String msg, RecognitionException e){
@@ -25,6 +34,7 @@ grammar LANSGrammar;
 // Regles sintàctiques i semàntiques
 inici
     @init {
+        endLine= bytecode.addConstant("S", "\n");
         System.out.println("Inici de compilació");
         Vector<Long> trad = new Vector<Long>();
     }
@@ -34,13 +44,36 @@ inici
         BC.write();
         System.out.println("Fi de compilació");
     }
-    : dec_constants?
-    dec_tipus?  dec_acc_func?
-    prog = programa {trad.addAll($prog.trad);}
+    : {
+        System.out.println("Inicia els blocs");
+        Scope scope = new Scope(s_global, "s_programa");
+        scope.setEsScopePrograma(true);
+        TScopes.inserir(scope.getNom(), scope);
+    }
+    dc=dec_constants[s_global]? {
+        if (!error) {
+            trad.addAll($dc.trad);
+        }
+    }
+    dt=dec_tipus[s_global]? {
+        if (!error) {
+            trad.addAll($dt.trad);
+        }
+    }
+    daf=dec_acc_func? {
+        if (!error) {
+            trad.addAll($daf.trad);
+        }
+    }
+    prog = programa[scope] {
+        if (!error) {
+            trad.addAll($prog.trad);
+        }
+    }
     imp_acc_func?
     EOF;
 
-programa returns [Vector<Long> trad]
+programa[Scope scope] returns [Vector<Long> trad]
     @init {
         System.out.println("Inici de programa");
     }
@@ -50,10 +83,10 @@ programa returns [Vector<Long> trad]
     : TK_PC_PROGRAMA  TK_IDENT dec_variables? (sentencia)+ TK_PC_FPROGRAMA;
 
 
-dec_constants: TK_PC_CONSTANTS  (assign_constant)+  TK_PC_FCONSTANTS;
+dec_constants [Scope scope]: TK_PC_CONSTANTS  (assign_constant)+  TK_PC_FCONSTANTS;
 assign_constant: TK_TIPUS TK_IDENT TK_ASSIGN_VALUE valor_constant TK_SEMI;
 
-dec_tipus: TK_PC_TIPUS  (declaracio_tipus_nou)+ TK_PC_FTIPUS;
+dec_tipus [Scope scope]: TK_PC_TIPUS  (declaracio_tipus_nou)+ TK_PC_FTIPUS;
 vector: TK_PC_VECTOR  TK_TIPUS  TK_PC_MIDA  TK_ENTER ( TK_PC_INICI_INDEX  TK_ENTER)? ;
 tupla: TK_PC_TUPLA  (TK_IDENT  TK_COLON  TK_TIPUS TK_SEMI )+ TK_PC_FTUPLA ;
 declaracio_tipus_nou : TK_IDENT  TK_COLON  (vector | tupla) TK_SEMI;

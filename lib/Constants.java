@@ -1,4 +1,4 @@
-// $ANTLR 2.7.7 (20060930): "prova.g" -> "ProvaLexic.java"$
+package lib;// $ANTLR 2.7.7 (20060930): "prova.g" -> "ProvaLexic.java"$
 
 
 

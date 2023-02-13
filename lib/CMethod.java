@@ -1,5 +1,4 @@
-
-
+package lib;
 
 
 //	Ajuda a la confeccio de codi en Bytecode. Practiques de MEC
