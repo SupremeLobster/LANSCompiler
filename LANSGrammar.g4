@@ -50,41 +50,69 @@ inici
         scope.setEsScopePrograma(true);
         TScopes.inserir(scope.getNom(), scope);
     }
-    dc=dec_constants[s_global]? {
-        if (!error) {
-            trad.addAll($dc.trad);
-        }
-    }
-    dt=dec_tipus[s_global]? {
-        if (!error) {
-            trad.addAll($dt.trad);
-        }
-    }
-    daf=dec_acc_func? {
-        if (!error) {
-            trad.addAll($daf.trad);
-        }
-    }
+    dc=dec_constants[s_global]?
+    dt=dec_tipus[s_global]?
+    daf=dec_acc_func?
     prog = programa[scope] {
         if (!error) {
             trad.addAll($prog.trad);
         }
     }
     imp_acc_func?
-    EOF;
+    EOF {
+        if (!error) {
+            for (Scope value : TScopes.valors()) {
+                if (!value.isImplementat()) {
+                    notifyErrorListeners("Error! La funció o acció " +
+                    value.getNom().substring(2,value.getNom().length()) + " no està implementada.");
+                }
+            }
+            CTS.llistatClaus();
+            for (Scope scope : TScopes.valors()) {
+                System.out.println(scope.getNom() + " " + scope.getMaxStack());
+            }
 
+            if (!error) {
+                trad.add(bytecode.RETURN);
+                System.out.println(s_global.getNom() + " " + s_global.getMaxStack());
+                bytecode.addMainCode(s_global.getMaxStack(), s_global.getContVar() + 5, trad);
+                bytecode.write();
+                bytecode.show();
+            }
+        }
+    };
+
+// Programa
 programa[Scope scope] returns [Vector<Long> trad]
     @init {
         System.out.println("Inici de programa");
+        $trad = new Vector<Long>(10);
     }
     @after {
         System.out.println("Fi de programa");
     }
-    : TK_PC_PROGRAMA  TK_IDENT dec_variables? (sentencia)+ TK_PC_FPROGRAMA;
+    : TK_PC_PROGRAMA  TK_IDENT dec_variables[scope]? (n=sentencia[scope] {
+        if (!error) $trad.addAll($n.trad);
+    })+ TK_PC_FPROGRAMA {
+        System.out.println("Final del bloc del programa");
+    };
 
+// Constants
+dec_constants [Scope scope] returns [Vector<Long> trad]
+    @init {
+        System.out.println("Inici del bloc de constants");
+        $trad = new Vector<Long>(10);
+    }: TK_PC_CONSTANTS  a=assign_constant[scope]+ {
+        if (!error) $trad = $a.trad;
+    } TK_PC_FCONSTANTS {
+        System.out.println("Fi del bloc de constants");
+    };
 
-dec_constants [Scope scope]: TK_PC_CONSTANTS  (assign_constant)+  TK_PC_FCONSTANTS;
-assign_constant: TK_TIPUS TK_IDENT TK_ASSIGN_VALUE valor_constant TK_SEMI;
+    // falta acabar
+assign_constant [Scope scope] returns [Vector<Long> trad]
+    @init {
+        $trad = new Vector<Long>(10);
+    }: TK_TIPUS TK_IDENT TK_ASSIGN_VALUE valor_constant TK_SEMI;
 
 dec_tipus [Scope scope]: TK_PC_TIPUS  (declaracio_tipus_nou)+ TK_PC_FTIPUS;
 vector: TK_PC_VECTOR  TK_TIPUS  TK_PC_MIDA  TK_ENTER ( TK_PC_INICI_INDEX  TK_ENTER)? ;
@@ -98,12 +126,25 @@ dec_accio : TK_PC_ACCIO  TK_IDENT TK_LPAREN params_formals_ent_entsor? TK_RPAREN
 dec_funcio : TK_PC_FUNCIO  TK_IDENT TK_LPAREN params_formals_ent? TK_RPAREN  TK_PC_RETURN  TK_TIPUS TK_SEMI ;
 dec_acc_func: (dec_accio | dec_funcio)+;
 
-imp_accio : TK_PC_ACCIO  TK_IDENT TK_LPAREN params_formals_ent_entsor? TK_RPAREN  (dec_var)* (sentencia)* TK_PC_FACCIO;
-imp_funcio : TK_PC_FUNCIO  TK_IDENT TK_LPAREN params_formals_ent? TK_RPAREN  TK_PC_RETURN  TK_TIPUS  (dec_var)* (sentencia)* TK_PC_RETURN expressio TK_SEMI  TK_PC_FFUNCIO;
+imp_accio : TK_PC_ACCIO  TK_IDENT TK_LPAREN params_formals_ent_entsor? TK_RPAREN  (dec_var[scope])* (sentencia[scope])* TK_PC_FACCIO;
+imp_funcio : TK_PC_FUNCIO  TK_IDENT TK_LPAREN params_formals_ent? TK_RPAREN  TK_PC_RETURN  TK_TIPUS  (dec_var[scope])* (sentencia[scope])* TK_PC_RETURN expressio TK_SEMI  TK_PC_FFUNCIO;
 imp_acc_func : (imp_accio | imp_funcio)*;
 
-dec_variables: TK_PC_VARIABLES  (dec_var)*  TK_PC_FVARIABLES;
-dec_var: TK_IDENT (TK_COMMA  TK_IDENT)*  TK_COLON  (TK_TIPUS | TK_IDENT) TK_SEMI;
+// Variables
+dec_variables[Scope scope]: {
+        System.out.println("Inici del bloc de variables");
+    } v=TK_PC_VARIABLES  (dec_var[scope])*  TK_PC_FVARIABLES {
+       System.out.println("Final del bloc de variables");
+    };
+
+    // ! falta si hi ha +1 identificador, afegir també
+dec_var[Scope scope]: v=TK_IDENT (TK_COMMA  TK_IDENT)*  TK_COLON  (tt=TK_TIPUS {
+    if (!CTS.existeix(scope, $v.text)) {
+        CTS.inserir(scope, $v.text, Registre.CrearRegistreVariable($v.text, $t.tipus, scope.getNextContVar()));
+    } else {
+        notifyErrorListeners($v, "Error! La variable " + $v.text + " ja està declarada.", null);
+    }
+} | TK_IDENT) TK_SEMI;
 
 operand: TK_ENTER | TK_NATURAL | TK_REAL | TK_DATA | TK_BOOLEA | TK_IDENT (acces_tupla | acces_vector | crida_funcio)?;
 i: c (TK_OP_QM c TK_COLON c)?;
@@ -121,18 +162,29 @@ acces_vector : TK_LBRACKET f TK_RBRACKET;
 crida_funcio: TK_LPAREN expressio (TK_COMMA expressio)* TK_RPAREN;
 
 
-sentencia: (TK_IDENT (assign_variable | crida_accio) | condicional | mentre | per | repetir | llegir | escriure | escriure_ln);
+sentencia [Scope scope] returns [Vector<Long> trad]
+    @init {
+        $trad=new Vector<Long>(10);
+    }: (TK_IDENT (a=assign_variable[scope] {
+        if (!error) $trad.addAll($a.trad);
+    } | b=crida_accio[scope] {
+        if (!error) $trad.addAll($b.trad);
+    }) | d=condicional[scope] {
+        if (!error) $trad.addAll($d.trad);
+    } | g=mentre[scope]{
+        if (!error) $trad.addAll($g.trad);
+    } | per | repetir | llegir | escriure | escriure_ln);
 
 
 llegir: TK_PC_LLEGIR TK_LPAREN TK_IDENT TK_RPAREN TK_SEMI;
 escriure: TK_PC_ESCRIURE TK_LPAREN expressio (TK_COMMA expressio)* TK_RPAREN TK_SEMI;
 escriure_ln: TK_PC_ESCRIURELN TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
-assign_variable: (acces_vector | acces_tupla)? TK_ASSIGN_VALUE expressio TK_SEMI;
-condicional: TK_PC_SI expressio TK_PC_LLAVORS (sentencia)+ (TK_PC_ALTRAMENT (sentencia)*)? TK_PC_FSI;
-mentre: TK_PC_MENTRE expressio TK_PC_FER (sentencia)+ TK_PC_FMENTRE;
-per: TK_PC_PER TK_IDENT TK_PC_DE expressio TK_PC_FINS expressio TK_PC_FER (sentencia)* TK_PC_FPER;
-repetir: TK_PC_REPETIR (sentencia)+ TK_PC_FINSQUE expressio TK_SEMI;
-crida_accio: TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
+assign_variable [Scope scope]: (acces_vector | acces_tupla)? TK_ASSIGN_VALUE expressio TK_SEMI;
+condicional [Scope scope]: TK_PC_SI expressio TK_PC_LLAVORS (sentencia[scope])+ (TK_PC_ALTRAMENT (sentencia[scope])*)? TK_PC_FSI;
+mentre [Scope scope]: TK_PC_MENTRE expressio TK_PC_FER (sentencia[scope])+ TK_PC_FMENTRE;
+per: TK_PC_PER TK_IDENT TK_PC_DE expressio TK_PC_FINS expressio TK_PC_FER (sentencia[scope])* TK_PC_FPER;
+repetir: TK_PC_REPETIR (sentencia[scope])+ TK_PC_FINSQUE expressio TK_SEMI;
+crida_accio [Scope scope]: TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
 
 valor_constant returns [String type, String value]:
     val = TK_ENTER { $type = "enter"; $value = $val.text; }
