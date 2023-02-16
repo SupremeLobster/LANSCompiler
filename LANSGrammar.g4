@@ -10,17 +10,13 @@ grammar LANSGrammar;
 }
 
 @parser::members{
-     CollectionSymTable CTS = new CollectionSymTable(1000);
+     SymTable TS = new SymTable<Registre>(1000);
      Bytecode BC = new Bytecode("ResultatsFitxerCompilat");
 
-     SymTable<Scope> TScopes = new SymTable<Scope>(20);
-     SymTable<VectorDB> TVectorsDB = new SymTable<VectorDB>(20);
      boolean error = false;
      Long nVars = 0L;
 
      Counter counter = new Counter();
-
-     Scope s_global = new Scope(null, "s_global");
 
      Long endLine;
 
@@ -112,7 +108,15 @@ dec_constants [Scope scope] returns [Vector<Long> trad]
 assign_constant [Scope scope] returns [Vector<Long> trad]
     @init {
         $trad = new Vector<Long>(10);
-    }: TK_TIPUS TK_IDENT TK_ASSIGN_VALUE valor_constant TK_SEMI;
+    }: tipus=TK_TIPUS nom=TK_IDENT TK_ASSIGN_VALUE valor=valor_constant {
+        if (TS.existeix($nom.text)) {
+            notifyErrorListeners("Error! La constant " + $nom.text + " ja existeix.");
+        }
+        else {
+            Long adreca = bytecode.addConstantName($nom.text, $tipus.text, $valor.text);
+            TS.inserir(scope, $nom.text, Registre.CrearRegistreConstant($nom.text, $tipus.text, adreca))
+        };
+    } TK_SEMI;
 
 dec_tipus [Scope scope]: TK_PC_TIPUS  (declaracio_tipus_nou)+ TK_PC_FTIPUS;
 vector: TK_PC_VECTOR  TK_TIPUS  TK_PC_MIDA  TK_ENTER ( TK_PC_INICI_INDEX  TK_ENTER)? ;
@@ -155,7 +159,9 @@ t: s ((TK_STAR | TK_OP_DIV | TK_OP_INT_DIV | TK_OP_MOD) s)*;
 s: (TK_OP_MINUS_U | TK_OP_NOT) f | f;
 f: operand | TK_LPAREN i TK_RPAREN;
 
-expressio: i | valor_constant | TK_LPAREN f TK_RPAREN;
+expressio: i | vc=valor_constant {
+
+} | TK_LPAREN f TK_RPAREN;
 
 acces_tupla : TK_DOT TK_IDENT;
 acces_vector : TK_LBRACKET f TK_RBRACKET;
@@ -193,8 +199,8 @@ valor_constant returns [String type, String value]:
     | val = TK_BOOLEA { $type = "bool"; $value = $val.text; }
     | val = TK_DATA { $type = "data"; $value = $val.text; }
     | val = TK_STRING { $type = "string"; $value = $val.text; }
-    | val = TK_OP_MINUS TK_ENTER  // TODO Cal arreglar-ho semanticament perque no es pot fer aixi
-    | val = TK_OP_MINUS TK_REAL ; // TODO Cal arreglar-ho semanticament perque no es pot fer aixi
+    | sign = TK_OP_MINUS val = TK_ENTER { $type = "enter"; $value = $sign.text + $val.text}
+    | sign = TK_OP_MINUS val = TK_REAL { $type = "real"; $value = $sign.text + $val.text};
 
 
 
