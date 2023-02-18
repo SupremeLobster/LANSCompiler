@@ -10,15 +10,11 @@ grammar LANSGrammar;
 }
 
 @parser::members{
-     SymTable TS = new SymTable<Registre>(1000);
+     SymTable<Registre> TS = new SymTable<Registre>(1000);
      Bytecode BC = new Bytecode("ResultatsFitxerCompilat");
 
      boolean error = false;
      Long nVars = 0L;
-
-     Counter counter = new Counter();
-
-     Long endLine;
 
      //override method
      public void notifyErrorListeners(Token offendingToken, String msg, RecognitionException e){
@@ -30,7 +26,6 @@ grammar LANSGrammar;
 // Regles sintàctiques i semàntiques
 inici
     @init {
-        endLine= bytecode.addConstant("S", "\n");
         System.out.println("Inici de compilació");
         Vector<Long> trad = new Vector<Long>();
     }
@@ -40,46 +35,18 @@ inici
         BC.write();
         System.out.println("Fi de compilació");
     }
-    : {
-        System.out.println("Inicia els blocs");
-        Scope scope = new Scope(s_global, "s_programa");
-        scope.setEsScopePrograma(true);
-        TScopes.inserir(scope.getNom(), scope);
-    }
-    dc=dec_constants[s_global]?
-    dt=dec_tipus[s_global]?
-    daf=dec_acc_func?
-    prog = programa[scope] {
-        if (!error) {
+    :
+    dec_constants?
+    dec_tipus?
+    dec_acc_func?
+    prog = programa {
             trad.addAll($prog.trad);
-        }
     }
     imp_acc_func?
-    EOF {
-        if (!error) {
-            for (Scope value : TScopes.valors()) {
-                if (!value.isImplementat()) {
-                    notifyErrorListeners("Error! La funció o acció " +
-                    value.getNom().substring(2,value.getNom().length()) + " no està implementada.");
-                }
-            }
-            CTS.llistatClaus();
-            for (Scope scope : TScopes.valors()) {
-                System.out.println(scope.getNom() + " " + scope.getMaxStack());
-            }
-
-            if (!error) {
-                trad.add(bytecode.RETURN);
-                System.out.println(s_global.getNom() + " " + s_global.getMaxStack());
-                bytecode.addMainCode(s_global.getMaxStack(), s_global.getContVar() + 5, trad);
-                bytecode.write();
-                bytecode.show();
-            }
-        }
-    };
+    EOF;
 
 // Programa
-programa[Scope scope] returns [Vector<Long> trad]
+programa returns [Vector<Long> trad]
     @init {
         System.out.println("Inici de programa");
         $trad = new Vector<Long>(10);
@@ -87,25 +54,23 @@ programa[Scope scope] returns [Vector<Long> trad]
     @after {
         System.out.println("Fi de programa");
     }
-    : TK_PC_PROGRAMA  TK_IDENT dec_variables[scope]? (n=sentencia[scope] {
-        if (!error) $trad.addAll($n.trad);
-    })+ TK_PC_FPROGRAMA {
-        System.out.println("Final del bloc del programa");
-    };
+    : TK_PC_PROGRAMA  TK_IDENT dec_variables? (n=sentencia {
+        $trad.addAll($n.trad);
+    })+ TK_PC_FPROGRAMA;
 
-// Constants
-dec_constants [Scope scope] returns [Vector<Long> trad]
+// Bloc Constants
+dec_constants returns [Vector<Long> trad]
     @init {
         System.out.println("Inici del bloc de constants");
         $trad = new Vector<Long>(10);
-    }: TK_PC_CONSTANTS  a=assign_constant[scope]+ {
+    }: TK_PC_CONSTANTS  a=assign_constant+ {
         if (!error) $trad = $a.trad;
     } TK_PC_FCONSTANTS {
         System.out.println("Fi del bloc de constants");
     };
 
     // falta acabar
-assign_constant [Scope scope] returns [Vector<Long> trad]
+assign_constant returns [Vector<Long> trad]
     @init {
         $trad = new Vector<Long>(10);
     }: tipus=TK_TIPUS nom=TK_IDENT TK_ASSIGN_VALUE valor=valor_constant {
@@ -118,11 +83,41 @@ assign_constant [Scope scope] returns [Vector<Long> trad]
         };
     } TK_SEMI;
 
-dec_tipus [Scope scope]: TK_PC_TIPUS  (declaracio_tipus_nou)+ TK_PC_FTIPUS;
-vector: TK_PC_VECTOR  TK_TIPUS  TK_PC_MIDA  TK_ENTER ( TK_PC_INICI_INDEX  TK_ENTER)? ;
-tupla: TK_PC_TUPLA  (TK_IDENT  TK_COLON  TK_TIPUS TK_SEMI )+ TK_PC_FTUPLA ;
-declaracio_tipus_nou : TK_IDENT  TK_COLON  (vector | tupla) TK_SEMI;
+// Bloc Vector
+vector: TK_PC_VECTOR  tipus_basics  TK_PC_MIDA  TK_ENTER ( TK_PC_INICI_INDEX  TK_ENTER)? ;
 
+// Bloc Tupla
+tupla: TK_PC_TUPLA  (id=TK_IDENT  TK_COLON  tb=tipus_basics {
+        Registre camp = new Registre($id.text,"TUPLE",$tb.type);
+        TS.inserir($id.text,camp);
+        System.out.println("Afegit un camp de tupla amb lexema " + $id.text);
+    }TK_SEMI )+ TK_PC_FTUPLA ;
+
+
+// Bloc Tipus
+dec_tipus
+    @init{
+        System.out.println("Inici bloc de tipus");
+    }
+    @after{
+        System.out.println("Fi bloc de tipus");
+    }: TK_PC_TIPUS  (declaracio_tipus_nou)+ TK_PC_FTIPUS;
+
+declaracio_tipus_nou : id=TK_IDENT {
+        if(TS.existeix($id.text)){
+            error = true;
+            System.err.println("Error semàntic: ja existeix el id amb lexema " + $id.text + ". Linia " + $id.line + ":" + $id.pos);
+            System.exit(-1);
+        }
+    } TK_COLON  (vector {
+        Registre nouTipusVec = new Registre($id.text,ConstantsTipus.VECTOR,ConstantsTipus.TIPUSNOU);
+        TS.inserir($id.text,nouTipusVec);
+        System.out.println("Afegit un nou tipus VECTOR amb lexema " + $id.text);
+    } | tupla {
+        Registre nouTipusTuple = new Registre($id.text,ConstantsTipus.TUPLE,ConstantsTipus.TIPUSNOU);
+        TS.inserir($id.text,nouTipusTuple);
+        System.out.println("Afegit un nou tipus TUPLA amb lexema " + $id.text);
+    }) TK_SEMI;
 
 params_formals_ent : (TK_PC_ENT?  TK_IDENT  TK_COLON  (TK_TIPUS | TK_IDENT) (TK_COMMA  TK_PC_ENT?  TK_IDENT  TK_COLON  (TK_TIPUS | TK_IDENT))*)+;
 params_formals_ent_entsor : ((TK_PC_ENT | TK_PC_ENTSOR)?  TK_IDENT  TK_COLON  (TK_TIPUS | TK_IDENT) (TK_COMMA  (TK_PC_ENT | TK_PC_ENTSOR)?  TK_IDENT  TK_COLON  (TK_TIPUS | TK_IDENT))*)+ ;
@@ -130,24 +125,31 @@ dec_accio : TK_PC_ACCIO  TK_IDENT TK_LPAREN params_formals_ent_entsor? TK_RPAREN
 dec_funcio : TK_PC_FUNCIO  TK_IDENT TK_LPAREN params_formals_ent? TK_RPAREN  TK_PC_RETURN  TK_TIPUS TK_SEMI ;
 dec_acc_func: (dec_accio | dec_funcio)+;
 
-imp_accio : TK_PC_ACCIO  TK_IDENT TK_LPAREN params_formals_ent_entsor? TK_RPAREN  (dec_var[scope])* (sentencia[scope])* TK_PC_FACCIO;
-imp_funcio : TK_PC_FUNCIO  TK_IDENT TK_LPAREN params_formals_ent? TK_RPAREN  TK_PC_RETURN  TK_TIPUS  (dec_var[scope])* (sentencia[scope])* TK_PC_RETURN expressio TK_SEMI  TK_PC_FFUNCIO;
+imp_accio : TK_PC_ACCIO  TK_IDENT TK_LPAREN params_formals_ent_entsor? TK_RPAREN  (dec_var)* (sentencia)* TK_PC_FACCIO;
+imp_funcio : TK_PC_FUNCIO  TK_IDENT TK_LPAREN params_formals_ent? TK_RPAREN  TK_PC_RETURN  TK_TIPUS  (dec_var)* (sentencia)* TK_PC_RETURN expressio TK_SEMI  TK_PC_FFUNCIO;
 imp_acc_func : (imp_accio | imp_funcio)*;
 
 // Variables
-dec_variables[Scope scope]: {
+dec_variables: {
         System.out.println("Inici del bloc de variables");
-    } v=TK_PC_VARIABLES  (dec_var[scope])*  TK_PC_FVARIABLES {
+    } TK_PC_VARIABLES  (dec_var)*  TK_PC_FVARIABLES {
        System.out.println("Final del bloc de variables");
     };
 
     // ! falta si hi ha +1 identificador, afegir també
-dec_var[Scope scope]: v=TK_IDENT (TK_COMMA  TK_IDENT)*  TK_COLON  (tt=TK_TIPUS {
-    if (!CTS.existeix(scope, $v.text)) {
-        CTS.inserir(scope, $v.text, Registre.CrearRegistreVariable($v.text, $t.tipus, scope.getNextContVar()));
-    } else {
-        notifyErrorListeners($v, "Error! La variable " + $v.text + " ja està declarada.", null);
-    }
+dec_var: id=TK_IDENT (TK_COMMA  TK_IDENT)*  TK_COLON  (tip=tipus_tots {
+    Registre registre = TS.obtenir($id.text);
+        if(TS.existeix($id.text) && registre.getTipusRegistre().equals("VARIABLE")){
+            error = true;
+            System.err.println("Error semàntic: ja existeix l'id amb lexema " + $id.text);
+            System.exit(-1);
+        }
+        else{
+            Registre var = new Registre($id.text,$tip.type,nVars,"VARIABLE");
+            TS.inserir($id.text,var);
+            nVars++;
+            System.out.println("Afegida una variable amb lexema " + $id.text + " i tipus " + $tip.type);
+        }
 } | TK_IDENT) TK_SEMI;
 
 operand: TK_ENTER | TK_NATURAL | TK_REAL | TK_DATA | TK_BOOLEA | TK_IDENT (acces_tupla | acces_vector | crida_funcio)?;
@@ -167,30 +169,57 @@ acces_tupla : TK_DOT TK_IDENT;
 acces_vector : TK_LBRACKET f TK_RBRACKET;
 crida_funcio: TK_LPAREN expressio (TK_COMMA expressio)* TK_RPAREN;
 
-
-sentencia [Scope scope] returns [Vector<Long> trad]
+// Bloc Sentències
+sentencia returns [Vector<Long> trad]
     @init {
+        System.out.println("Inici bloc de sentencies");
         $trad=new Vector<Long>(10);
-    }: (TK_IDENT (a=assign_variable[scope] {
-        if (!error) $trad.addAll($a.trad);
-    } | b=crida_accio[scope] {
-        if (!error) $trad.addAll($b.trad);
-    }) | d=condicional[scope] {
+    }: (TK_IDENT (a=assign_variable { $trad.addAll($a.trad);}
+    | b=crida_accio { $trad.addAll($b.trad);}
+    ) | d=condicional {
         if (!error) $trad.addAll($d.trad);
-    } | g=mentre[scope]{
-        if (!error) $trad.addAll($g.trad);
-    } | per | repetir | llegir | escriure | escriure_ln);
+    } | g=mentre{ $trad.addAll($g.trad);}
+    | per | repetir | llegir | escriure | escriure_ln);
 
 
 llegir: TK_PC_LLEGIR TK_LPAREN TK_IDENT TK_RPAREN TK_SEMI;
 escriure: TK_PC_ESCRIURE TK_LPAREN expressio (TK_COMMA expressio)* TK_RPAREN TK_SEMI;
 escriure_ln: TK_PC_ESCRIURELN TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
-assign_variable [Scope scope]: (acces_vector | acces_tupla)? TK_ASSIGN_VALUE expressio TK_SEMI;
-condicional [Scope scope]: TK_PC_SI expressio TK_PC_LLAVORS (sentencia[scope])+ (TK_PC_ALTRAMENT (sentencia[scope])*)? TK_PC_FSI;
-mentre [Scope scope]: TK_PC_MENTRE expressio TK_PC_FER (sentencia[scope])+ TK_PC_FMENTRE;
-per: TK_PC_PER TK_IDENT TK_PC_DE expressio TK_PC_FINS expressio TK_PC_FER (sentencia[scope])* TK_PC_FPER;
-repetir: TK_PC_REPETIR (sentencia[scope])+ TK_PC_FINSQUE expressio TK_SEMI;
-crida_accio [Scope scope]: TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
+assign_variable returns [Vector<Long> trad]
+    @init {
+        $trad = new Vector<Long>();
+    }: (acces_vector | acces_tupla)? TK_ASSIGN_VALUE expressio TK_SEMI;
+condicional: TK_PC_SI expressio TK_PC_LLAVORS (sentencia)+ (TK_PC_ALTRAMENT (sentencia)*)? TK_PC_FSI;
+mentre: TK_PC_MENTRE expressio TK_PC_FER (sentencia)+ TK_PC_FMENTRE;
+per: TK_PC_PER TK_IDENT TK_PC_DE expressio TK_PC_FINS expressio TK_PC_FER (sentencia)* TK_PC_FPER;
+repetir: TK_PC_REPETIR (sentencia)+ TK_PC_FINSQUE expressio TK_SEMI;
+crida_accio: TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
+
+
+tipus_tots returns [String type]:
+        tb=tipus_basics {$type=$tb.type;}
+    |   id=TK_IDENT {
+            if(!TS.existeix($id.text)){
+                error = true;
+                System.err.println("No existeix un tipus definit amb lexema: " + $id.text + ". Linia " + $id.line + ":" + $id.pos);
+                System.exit(-1);
+            }
+            Registre registre = TS.obtenir($id.text);
+            if (!registre.getTipusRegistre().equals(ConstantsTipus.TIPUSNOU)) {
+                error = true;
+                System.err.println("El lexema " + $id.text + " ha de ser d'un tipus nou. Linia " + $id.line + ":" + $id.pos);
+                System.exit(-1);
+            }
+            $type = registre.getTipus();
+        };
+
+tipus_basics returns [String type]:
+    TK_PC_INTEGER {$type="I";}
+    | TK_PC_CHAR {$type="C";}
+    | TK_PC_REAL {$type="F";}
+    | TK_PC_BOOLEAN {$type="B";}
+    | TK_PC_DATE {$type="D";};
+
 
 valor_constant returns [String type, String value]:
     val = TK_ENTER { $type = "enter"; $value = $val.text; }
