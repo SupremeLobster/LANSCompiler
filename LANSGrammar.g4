@@ -388,11 +388,11 @@ tipus_tots returns [String type]:
         };
 
 tipus_basics returns [String type]:
-    TK_PC_INTEGER {$type="I";}
-    | TK_PC_CHAR {$type="C";}
+    TK_PC_ENTER {$type="I";}
+    | TK_PC_CAR {$type="C";}
     | TK_PC_REAL {$type="F";}
-    | TK_PC_BOOLEAN {$type="B";}
-    | TK_PC_DATE {$type="D";};
+    | TK_PC_BOOL {$type="B";}
+    | TK_PC_DATA {$type="D";};
 
 
 valor_constant returns [String type, String value]:
