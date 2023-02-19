@@ -153,8 +153,15 @@ dec_var: id=TK_IDENT (TK_COMMA  TK_IDENT)*  TK_COLON  (tip=tipus_tots {
 } | TK_IDENT) TK_SEMI;
 
 
-operand: TK_ENTER | TK_NATURAL | TK_REAL | TK_DATA | TK_BOOLEA | TK_IDENT (acces_tupla | acces_vector | crida_funcio)?;
+operand returns [Vector<Long> trad, String type]
+    : a=(TK_ENTER | TK_NATURAL | TK_REAL | TK_DATA | TK_BOOLEA) {
+        $trad = a.trad;
+        $type = a.type;
+    }
+    | id=TK_IDENT (acces_tupla | acces_vector | crida_funcio)?;
+
 i: c (TK_OP_QM c TK_COLON c)?;
+
 c returns [Vector<Long> trad, String type]
     : a=l {
         $trad = $a.trad;
