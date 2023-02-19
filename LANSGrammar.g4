@@ -78,7 +78,7 @@ assign_constant returns [Vector<Long> trad]
             notifyErrorListeners("Error! La constant " + $nom.text + " ja existeix.");
         }
         else {
-            Long adreca = bytecode.addConstantName($nom.text, $tipus.text, $valor.text);
+            Long adreca = BC.addConstantName($nom.text, $tipus.text, $valor.text);
             TS.inserir(scope, $nom.text, Registre.CrearRegistreConstant($nom.text, $tipus.text, adreca))
         };
     } TK_SEMI;
@@ -88,10 +88,10 @@ vector: TK_PC_VECTOR  tipus_basics  TK_PC_MIDA  TK_ENTER ( TK_PC_INICI_INDEX  TK
 
 // Bloc Tupla
 tupla: TK_PC_TUPLA  (id=TK_IDENT  TK_COLON  tb=tipus_basics {
-        Registre camp = new Registre($id.text,"TUPLE",$tb.type);
-        TS.inserir($id.text,camp);
+        Registre camp = new Registre($id.text, "TUPLE", $tb.type);
+        TS.inserir($id.text, camp);
         System.out.println("Afegit un camp de tupla amb lexema " + $id.text);
-    }TK_SEMI )+ TK_PC_FTUPLA ;
+    } TK_SEMI )+ TK_PC_FTUPLA ;
 
 
 // Bloc Tipus
@@ -152,16 +152,190 @@ dec_var: id=TK_IDENT (TK_COMMA  TK_IDENT)*  TK_COLON  (tip=tipus_tots {
         }
 } | TK_IDENT) TK_SEMI;
 
+
 operand: TK_ENTER | TK_NATURAL | TK_REAL | TK_DATA | TK_BOOLEA | TK_IDENT (acces_tupla | acces_vector | crida_funcio)?;
 i: c (TK_OP_QM c TK_COLON c)?;
-c: l ((TK_OP_LT | TK_OP_LEQ | TK_OP_EQ | TK_OP_GEQ | TK_OP_GT | TK_OP_NEQ) l)*;
-l: e ((TK_OP_OR | TK_OP_AND) e)*;
-e: t ((TK_OP_PLUS | TK_OP_MINUS) t)*;
-t: s ((TK_STAR | TK_OP_DIV | TK_OP_INT_DIV | TK_OP_MOD) s)*;
-s: (TK_OP_MINUS_U | TK_OP_NOT) f | f;
-f: operand | TK_LPAREN i TK_RPAREN;
+c returns [Vector<Long> trad, String type]
+    : a=l {
+        $trad = $a.trad;
+        $type = $a.type;
+    } (op=(TK_OP_LT | TK_OP_LEQ | TK_OP_EQ | TK_OP_GEQ | TK_OP_GT | TK_OP_NEQ) b=l {
+        if ($op.text.equals("==") || $op.text.equals("!=")) {
+            if ($type!=$b.type && (!$type.equals("I") || !$type.equals("F"))
+                && (!$b.type.equals("I") || !$b.type.equals("F"))) {
+                error = true;
+                System.err.println("Els operands d'igualtat o desigualtat han de ser del mateix tipus o enters i reals. Linia " + $op.line + ":" + $op.pos);
+                System.exit(-1);
+            }
+            if (!$type.equals("F")) $trad.add(BC.I2F); // si e1 no es real, fem el pas d'enter a real a trad
+            $trad.addAll($b.trad); // afegim b a trad
+            if (!$b.type.equals("F")) $trad.add(BC.I2F); // si b no es real, fem el pas d'enter a real a trad
+        }
+        else if (!$type.equals("I") && !$type.equals("F")
+                 && !$b.type.equals("I") && !$b.type.equals("F")
+                 && !$type.equals("D") && !$b.type.equals("D")) {
+            error = true;
+            System.err.println("Els operands d'una operació relacional han de ser enters o reals. Linia " + $op.line + ":" + $op.pos);
+            System.exit(-1);
+        }
+        else {
+            if ($type.equals("I")) $trad.add(BC.I2F);
+            $trad.addAll($b.trad);
+            if ($b.type.equals("I")) $trad.add(BC.I2F);
+        }
+        $trad.add(BC.FCMPG); // els dos valors reals anteriors
+        if ($op.text.equals("==")) $trad.add(BC.IFEQ);
+        else if ($op.text.equals("!=")) $trad.add(BC.IFNE);
+        else if ($op.text.equals("<")) $trad.add(BC.IFLT);
+        else if ($op.text.equals("<=")) $trad.add(BC.IFLE);
+        else if ($op.text.equals(">")) $trad.add(BC.IFGT);
+        else if ($op.text.equals(">=")) $trad.add(BC.IFGE);
+        $trad.add(BC.nByte(8L,2));
+        $trad.add(BC.nByte(8L,1));
+        $trad.add(BC.BIPUSH);
+        $trad.add(0L);
+        $trad.add(BC.GOTO);
+        $trad.add(BC.nByte(5L,2));
+        $trad.add(BC.nByte(5L,1));
+        $trad.add(BC.BIPUSH);
+        $trad.add(1L);
+        $type = "B";
+    })*;
 
-expressio: i | vc=valor_constant {
+l returns [Vector<Long> trad, String type]
+    : a=e {
+        $trad = $a.trad;
+        $type = $a.type;
+    } (op=(TK_OP_OR | TK_OP_AND) b=e {
+        if ($type.equals("B") && $b.type.equals("B")) {
+            $trad.addAll($b.trad);
+            if ($op.text.equals("|")) $trad.add(BC.IOR);
+            else $trad.add(BC.IAND);
+        }
+        else {
+            error = true;
+            System.err.println("Els operands han de ser de tipus booleà. Linia " + $op.line + ":" + $op.pos);
+            System.exit(-1);
+        }
+    })*;
+
+e returns [Vector<Long> trad, String type] locals [boolean operacioEntera]
+    : a=t {
+        $trad = $a.trad;
+        $type = $a.type;
+    } (op=(TK_OP_PLUS | TK_OP_MINUS) b=t {
+        if($type.equals("D") || $b.type.equals("D")){
+            if ($type.equals("I") || $b.type.equals("I")) {
+                $trad.addAll($b.trad);
+                $type = "D";
+                if ($op.text.equals("+")) $trad.add(BC.IADD);
+                else $trad.add(BC.ISUB);
+            }
+        }
+        else if (!$type.equals("I") && !$type.equals("F") && !$b.type.equals("I") && !$b.type.equals("F")) {
+            error = true;
+            System.err.println("Els operands d'una operació aritmetica han de ser enters o reals. Línia " + $op.line + ":" + $op.pos);
+            System.exit(-1);
+        }
+        $operacioEntera = $type.equals("I") && $b.type.equals("I");
+        if (!$operacioEntera) {
+            if ($type.equals("I")) $trad.add(BC.I2F);
+            $trad.addAll($b.trad);
+            if ($b.type.equals("I")) $trad.add(BC.I2F);
+            $type = "F";
+            if ($op.text.equals("+")) $trad.add(BC.FADD);
+            else $trad.add(BC.FSUB);
+        }
+        else {
+            $trad.addAll($b.trad);
+            $type = "I";
+            if ($op.text.equals("+")) $trad.add(BC.IADD);
+            else $trad.add(BC.ISUB);
+        }
+    })*;
+
+t returns [Vector<Long> trad, String type] locals [boolean operacioEntera]
+    : a=s {
+        $trad = $a.trad;
+        $type = $a.type;
+    } (op=(TK_STAR | TK_OP_DIV | TK_OP_INT_DIV | TK_OP_MOD) b=s {
+        if (!$type.equals("I") && !$type.equals("F") &&
+            !$b.type.equals("I") && !$b.type.equals("F")) {
+            error = true;
+            System.err.println("Els operands d'una operació aritmetica han de ser enters o reals. Linia " + $op.line + ":" + $op.pos);
+            System.exit(-1);
+        }
+        $operacioEntera = $type.equals("I") && $b.type.equals("I");
+        if ($op.text.equals("\\") || $op.text.equals("%")) { // divisio entera i modul enter
+            if (!$type.equals("I")) $trad.add(BC.F2I);
+            $trad.addAll($b.trad);
+            if (!$b.type.equals("I")) $trad.add(BC.F2I);
+            $type = "I";
+            if ($op.text.equals("\\")) $trad.add(BC.IDIV);
+            else if ($op.text.equals("%")) $trad.add(BC.FREM);
+        }
+        else if (!$operacioEntera) { // multiplicacio i divisio real
+            if ($type.equals("I")) $trad.add(BC.I2F);
+            $trad.addAll($b.trad);
+            if ($b.type.equals("I")) $trad.add(BC.I2F);
+            $type = "F";
+            if ($op.text.equals("*")) $trad.add(BC.FMUL);
+            else if ($op.text.equals("/")) $trad.add(BC.FDIV);
+        }
+        else { // multiplicacio entera
+            $trad.addAll($b.trad);
+            $type = "I";
+            if ($op.text.equals("*")) $trad.add(BC.IMUL);
+        }
+    })*;
+
+s returns [Vector<Long> trad, String type]
+    : op=(TK_OP_MINUS_U | TK_OP_NOT)? a=f {
+        $trad = $a.trad;
+        $type = $a.type;
+        
+        if ($op!=null) {
+            if($op.text.equals("~")){
+                if(!$a.type.equals("I") && !$a.type.equals("F")){
+                    error = true;
+                    System.err.println("L'operador de menys unari només està definit per enters i reals. Linia " + $op.line + ":" + $op.pos);
+                    System.exit(-1);
+                }
+                else if($a.type.equals("F")) $trad.add(BC.FNEG);
+                else $trad.add(BC.INEG);
+            }
+            else{ // el 'no'
+                if(!$a.type.equals("B")) {
+                    error = true;
+                    System.err.println("L'operador de no lògic només està definit per booleans. Linia " + $op.line + ":" + $op.pos);
+                    System.exit(-1);
+                }
+                // Sumem 1 i fem el modul de 2 per negar
+                // ref: https://www.generacodice.com/en/articolo/4919243/generating-jvm-bytecode-for-a-unary-not-expression
+                $trad.add(BC.BIPUSH);
+                $trad.add(1L);
+                $trad.add(BC.IADD);
+                $trad.add(BC.BIPUSH);
+                $trad.add(2L);
+                $trad.add(BC.IREM);
+            }
+        }
+    };
+
+f returns [Vector<Long> trad, String type]
+    : a=operand {
+        $trad = $a.trad;
+        $type = $a.type;
+    }
+    | TK_LPAREN b=i TK_RPAREN {
+        $trad = $b.trad;
+        $type = $b.type;
+    };
+
+expressio returns [Vector<Long> trad, String type]
+    @init {
+        $trad = new Vector<Long>();
+    }: i | vc=valor_constant {
 
 } | TK_LPAREN f TK_RPAREN;
 
