@@ -110,11 +110,11 @@ declaracio_tipus_nou : id=TK_IDENT {
             System.exit(-1);
         }
     } TK_COLON  (vector {
-        Registre nouTipusVec = new Registre($id.text,ConstantsTipus.VECTOR,ConstantsTipus.TIPUSNOU);
+        Registre nouTipusVec = new Registre($id.text,"VECTOR","TIPUSNOU");
         TS.inserir($id.text,nouTipusVec);
         System.out.println("Afegit un nou tipus VECTOR amb lexema " + $id.text);
     } | tupla {
-        Registre nouTipusTuple = new Registre($id.text,ConstantsTipus.TUPLE,ConstantsTipus.TIPUSNOU);
+        Registre nouTipusTuple = new Registre($id.text,"TUPLE","TIPUSNOU");
         TS.inserir($id.text,nouTipusTuple);
         System.out.println("Afegit un nou tipus TUPLA amb lexema " + $id.text);
     }) TK_SEMI;
@@ -363,7 +363,13 @@ sentencia returns [Vector<Long> trad]
     | per | repetir | llegir | escriure | escriure_ln);
 
 
-llegir: TK_PC_LLEGIR TK_LPAREN TK_IDENT TK_RPAREN TK_SEMI;
+llegir returns [Vector<Long> trad]
+    @init {
+        $trad = new Vector<Long>();
+    }: TK_PC_LLEGIR TK_LPAREN TK_IDENT TK_RPAREN TK_SEMI;
+
+
+
 escriure: TK_PC_ESCRIURE TK_LPAREN expressio (TK_COMMA expressio)* TK_RPAREN TK_SEMI;
 escriure_ln: TK_PC_ESCRIURELN TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
 assign_variable returns [Vector<Long> trad]
@@ -386,7 +392,7 @@ tipus_tots returns [String type]:
                 System.exit(-1);
             }
             Registre registre = TS.obtenir($id.text);
-            if (!registre.getTipusRegistre().equals(ConstantsTipus.TIPUSNOU)) {
+            if (!registre.getTipusRegistre().equals("TIPUSNOU")) {
                 error = true;
                 System.err.println("El lexema " + $id.text + " ha de ser d'un tipus nou. Linia " + $id.line + ":" + $id.pos);
                 System.exit(-1);
