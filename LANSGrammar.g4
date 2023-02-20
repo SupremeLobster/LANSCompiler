@@ -78,8 +78,9 @@ assign_constant returns [Vector<Long> trad]
             notifyErrorListeners("Error! La constant " + $nom.text + " ja existeix.");
         }
         else {
-            Long adreca = BC.addConstantName($nom.text, $tipus.text, $valor.text);
-            TS.inserir(scope, $nom.text, Registre.CrearRegistreConstant($nom.text, $tipus.text, adreca))
+            Long adreca = BC.addConstName($nom.text, $tipus.text, $valor.text);
+            Registre reg = new Registre($nom.text, $tipus.text, adreca);
+            TS.inserir($nom.text, reg);
         };
     } TK_SEMI;
 
@@ -87,11 +88,7 @@ assign_constant returns [Vector<Long> trad]
 vector: TK_PC_VECTOR  tipus_basics  TK_PC_MIDA  TK_ENTER ( TK_PC_INICI_INDEX  TK_ENTER)? ;
 
 // Bloc Tupla
-tupla: TK_PC_TUPLA  (id=TK_IDENT  TK_COLON  tb=tipus_basics {
-        Registre camp = new Registre($id.text, "TUPLE", $tb.type);
-        TS.inserir($id.text, camp);
-        System.out.println("Afegit un camp de tupla amb lexema " + $id.text);
-    } TK_SEMI )+ TK_PC_FTUPLA ;
+tupla: TK_PC_TUPLA  (id=TK_IDENT  TK_COLON  tb=tipus_basics TK_SEMI )+ TK_PC_FTUPLA ;
 
 
 // Bloc Tipus
@@ -109,15 +106,11 @@ declaracio_tipus_nou : id=TK_IDENT {
             System.err.println("Error semàntic: ja existeix el id amb lexema " + $id.text + ". Linia " + $id.line + ":" + $id.pos);
             System.exit(-1);
         }
-    } TK_COLON  (vector {
-        Registre nouTipusVec = new Registre($id.text,"VECTOR","TIPUSNOU");
-        TS.inserir($id.text,nouTipusVec);
-        System.out.println("Afegit un nou tipus VECTOR amb lexema " + $id.text);
-    } | tupla {
-        Registre nouTipusTuple = new Registre($id.text,"TUPLE","TIPUSNOU");
-        TS.inserir($id.text,nouTipusTuple);
-        System.out.println("Afegit un nou tipus TUPLA amb lexema " + $id.text);
-    }) TK_SEMI;
+        else {
+            Registre reg = new Registre($id.text, "TIPUSNOU", null);
+            TS.inserir($id.text, reg);
+        }
+    } TK_COLON  (vector | tupla) TK_SEMI;
 
 params_formals_ent : (TK_PC_ENT?  TK_IDENT  TK_COLON  (TK_TIPUS | TK_IDENT) (TK_COMMA  TK_PC_ENT?  TK_IDENT  TK_COLON  (TK_TIPUS | TK_IDENT))*)+;
 params_formals_ent_entsor : ((TK_PC_ENT | TK_PC_ENTSOR)?  TK_IDENT  TK_COLON  (TK_TIPUS | TK_IDENT) (TK_COMMA  (TK_PC_ENT | TK_PC_ENTSOR)?  TK_IDENT  TK_COLON  (TK_TIPUS | TK_IDENT))*)+ ;
@@ -154,13 +147,63 @@ dec_var: id=TK_IDENT (TK_COMMA  TK_IDENT)*  TK_COLON  (tip=tipus_tots {
 
 
 operand returns [Vector<Long> trad, String type]
-    : a=(TK_ENTER | TK_NATURAL | TK_REAL | TK_DATA | TK_BOOLEA) {
-        $trad = a.trad;
-        $type = a.type;
+    : (enter=TK_ENTER {
+        Long addr = BC.addConstant("I", $enter.text);
+        $trad.add(BC.LDC_W);
+        $trad.add(BC.nByte(addr, 2));
+        $trad.add(BC.nByte(addr, 1));
+        $type = "I";
     }
-    | id=TK_IDENT (acces_tupla | acces_vector | crida_funcio)?;
+    | real=TK_REAL {
+        Long addr = BC.addConstant("F", $real.text);
+        $trad.add(BC.LDC_W);
+        $trad.add(BC.nByte(addr, 2));
+        $trad.add(BC.nByte(addr, 1));
+        $type = "F";
+    }
+    | data=TK_DATA {
+        Long addr = BC.addConstant("D", $data.text);
+        $trad.add(BC.LDC_W);
+        $trad.add(BC.nByte(addr, 2));
+        $trad.add(BC.nByte(addr, 1));
+        $type = "D";
+    }
+    | boolea=TK_BOOLEA {
+        Long addr = BC.addConstant("Z", $boolea.text);
+        $trad.add(BC.LDC_W);
+        $trad.add(BC.nByte(addr, 2));
+        $trad.add(BC.nByte(addr, 1));
+        $type = "Z";
+    })
+    | id=TK_IDENT {
+        if (!TS.existeix($id.text)) {
+            error = true;
+            System.err.println("Error semàntic: no existeix l'id amb lexema " + $id.text + ". Linia " + $id.line + ":" + $id.pos);
+            System.exit(-1);
+        }
 
-i: c (TK_OP_QM c TK_COLON c)?;
+        Registre reg = TS.obtenir($id.text);
+        $type = reg.getTipus();
+        Long addr = reg.getAdreca();
+        String tipusReg = reg.getTipusRegistre();
+
+        if (tipusReg.equals("VARIABLE")) {
+            if ($type.equals("F")) $trad.add(BC.FLOAD);
+            else $trad.add(BC.ILOAD);
+            $trad.add(addr);
+        }
+        else {
+            $trad.add(BC.LDC_W);
+            $trad.add(BC.nByte(addr, 2));
+            $trad.add(BC.nByte(addr, 1));
+        }
+    } (acces_tupla | acces_vector | crida_funcio)?;
+
+i returns [Vector<Long> trad, String type]
+    : a=c {
+        $trad = $a.trad;
+        $type = $a.type;
+    } (TK_OP_QM b=c TK_COLON d=c)?;
 
 c returns [Vector<Long> trad, String type]
     : a=l {
@@ -206,7 +249,7 @@ c returns [Vector<Long> trad, String type]
         $trad.add(BC.nByte(5L,1));
         $trad.add(BC.BIPUSH);
         $trad.add(1L);
-        $type = "B";
+        $type = "Z";
     })*;
 
 l returns [Vector<Long> trad, String type]
@@ -214,7 +257,7 @@ l returns [Vector<Long> trad, String type]
         $trad = $a.trad;
         $type = $a.type;
     } (op=(TK_OP_OR | TK_OP_AND) b=e {
-        if ($type.equals("B") && $b.type.equals("B")) {
+        if ($type.equals("Z") && $b.type.equals("Z")) {
             $trad.addAll($b.trad);
             if ($op.text.equals("|")) $trad.add(BC.IOR);
             else $trad.add(BC.IAND);
@@ -300,7 +343,7 @@ s returns [Vector<Long> trad, String type]
     : op=(TK_OP_MINUS_U | TK_OP_NOT)? a=f {
         $trad = $a.trad;
         $type = $a.type;
-        
+
         if ($op!=null) {
             if($op.text.equals("~")){
                 if(!$a.type.equals("I") && !$a.type.equals("F")){
@@ -312,7 +355,7 @@ s returns [Vector<Long> trad, String type]
                 else $trad.add(BC.INEG);
             }
             else{ // el 'no'
-                if(!$a.type.equals("B")) {
+                if(!$a.type.equals("Z")) {
                     error = true;
                     System.err.println("L'operador de no lògic només està definit per booleans. Linia " + $op.line + ":" + $op.pos);
                     System.exit(-1);
@@ -346,9 +389,13 @@ expressio returns [Vector<Long> trad, String type]
 
 } | TK_LPAREN f TK_RPAREN;
 
-acces_tupla : TK_DOT TK_IDENT;
-acces_vector : TK_LBRACKET f TK_RBRACKET;
-crida_funcio: TK_LPAREN expressio (TK_COMMA expressio)* TK_RPAREN;
+acces_tupla returns [Vector<Long> trad, String type]
+    : TK_DOT TK_IDENT {
+        $trad = new Vector<Long>();
+        $type = "I";
+    };
+acces_vector returns [Vector<Long> trad, String type]: TK_LBRACKET f TK_RBRACKET;
+crida_funcio returns [Vector<Long> trad, String type]: TK_LPAREN expressio (TK_COMMA expressio)* TK_RPAREN;
 
 // Bloc Sentències
 sentencia returns [Vector<Long> trad]
@@ -356,32 +403,188 @@ sentencia returns [Vector<Long> trad]
         System.out.println("Inici bloc de sentencies");
         $trad=new Vector<Long>(10);
     }: (TK_IDENT (a=assign_variable { $trad.addAll($a.trad);}
-    | b=crida_accio { $trad.addAll($b.trad);}
+    | b=crida_accio {  } // falta implementar les accions
     ) | d=condicional {
         if (!error) $trad.addAll($d.trad);
     } | g=mentre{ $trad.addAll($g.trad);}
     | per | repetir | llegir | escriure | escriure_ln);
 
-
+// Lectura
 llegir returns [Vector<Long> trad]
     @init {
         $trad = new Vector<Long>();
     }: TK_PC_LLEGIR TK_LPAREN TK_IDENT TK_RPAREN TK_SEMI;
 
+// Escriptura
+escriure returns [Vector<Long> trad]
+    @init {
+        $trad = new Vector<Long>();
+    }: TK_PC_ESCRIURE TK_LPAREN e1=expressio {$trad=$e1.trad;}
+    (TK_COMMA e2=expressio {$trad=$e2.trad;})* TK_RPAREN TK_SEMI;
 
+escriure_ln returns [Vector<Long> trad]
+    @init {
+        $trad = new Vector<Long>();
+    }: TK_PC_ESCRIURELN TK_LPAREN (ex=expressio {$trad=$ex.trad;}
+    (TK_COMMA ex2=expressio {$trad=$ex.trad;})*)? TK_RPAREN TK_SEMI {
+        String str = "\n";
+        Long addr = BC.addConstant("S",str);
+        $trad.add(BC.LDC_W);
+        $trad.add(BC.nByte(addr,2));
+        $trad.add(BC.nByte(addr,1));
+        $trad.add(BC.INVOKESTATIC);
+        $trad.add(BC.nByte(BC.mPutString, 2));
+        $trad.add(BC.nByte(BC.mPutString, 1));
+    };
 
-escriure: TK_PC_ESCRIURE TK_LPAREN expressio (TK_COMMA expressio)* TK_RPAREN TK_SEMI;
-escriure_ln: TK_PC_ESCRIURELN TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
 assign_variable returns [Vector<Long> trad]
     @init {
         $trad = new Vector<Long>();
     }: (acces_vector | acces_tupla)? TK_ASSIGN_VALUE expressio TK_SEMI;
-condicional: TK_PC_SI expressio TK_PC_LLAVORS (sentencia)+ (TK_PC_ALTRAMENT (sentencia)*)? TK_PC_FSI;
-mentre: TK_PC_MENTRE expressio TK_PC_FER (sentencia)+ TK_PC_FMENTRE;
-per: TK_PC_PER TK_IDENT TK_PC_DE expressio TK_PC_FINS expressio TK_PC_FER (sentencia)* TK_PC_FPER;
-repetir: TK_PC_REPETIR (sentencia)+ TK_PC_FINSQUE expressio TK_SEMI;
-crida_accio: TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
 
+// Condicional
+condicional returns [Vector<Long> trad] locals [Vector<Long> tradIf, Vector<Long> tradElse]
+    @init {
+      $trad = new Vector<Long>();
+      $tradIf = new Vector<Long>();
+      $tradElse = new Vector<Long>();
+    }: si=TK_PC_SI ex=expressio {
+        if (!$ex.type.equals("Z")) {
+            error = true;
+            System.err.println("Error semàntic: l'expressió d'un condicional ha de ser de tipus boolea. Linia " + $si.line + ":" + $si.pos);
+            System.exit(-1);
+        }
+    } TK_PC_LLAVORS (s1=sentencia)+ {
+        $tradIf = $s1.trad;
+    } (TK_PC_ALTRAMENT (s2=sentencia {
+        $tradElse = $s2.trad;
+    })*)? TK_PC_FSI {
+        Long ifFals = new Long($tradIf.size() + 4);
+        Long elseFals = new Long($tradElse.size() + 2);
+
+        $trad.addAll($ex.trad);
+
+        $trad.add(BC.IFEQ);
+        $trad.add(BC.nByte(ifFals,2));
+        $trad.add(BC.nByte(ifFals,1));
+        $trad.addAll($tradIf);
+
+        $trad.add(BC.GOTO);
+        $trad.add(BC.nByte(elseFals,2));
+        $trad.add(BC.nByte(elseFals,1));
+        $trad.addAll($tradElse);
+    };
+
+// Bucles
+mentre returns [Vector<Long> trad] locals [Vector<Long> tradMentre]
+    @init {
+        $trad = new Vector<Long>();
+        $tradMentre = new Vector<Long>();
+    }: w=TK_PC_MENTRE ex=expressio {
+        if (!$ex.type.equals("Z")) {
+            error = true;
+            System.err.println("Error semàntic: l'expressió ha de ser tipus booleana. Linia " + $w.line + ":" + $w.pos);
+            System.exit(-1);
+        }
+    } TK_PC_FER (se=sentencia{
+        $tradMentre = $se.trad;
+    })+ TK_PC_FMENTRE{
+        Long midaSaltFi = new Long($tradMentre.size() + 6);
+        Long midaSaltInici = new Long(-$tradMentre.size() - 6);
+
+        $trad.addAll($ex.trad);
+
+        $trad.add(BC.IFEQ);
+        $trad.add(BC.nByte(midaSaltFi,2));
+        $trad.add(BC.nByte(midaSaltFi,1));
+        $trad.addAll($tradMentre);
+
+        $trad.add(BC.GOTO);
+        $trad.add(BC.nByte(midaSaltInici,2));
+        $trad.add(BC.nByte(midaSaltInici,1));
+    };
+
+per returns [Vector<Long> trad] locals [Vector<Long> tradPer, Registre registre, Long pas]
+    @init {
+        $trad = new Vector<Long>();
+        $tradPer = new Vector<Long>();
+        $pas = 1L;
+    }: TK_PC_PER id=TK_IDENT {
+        if(!TS.existeix($id.text)){
+            error = true;
+            System.err.println("Error semàntic: no existeix una variable amb lexema " + $id.text + ". Linia " + $id.line + ":" + $id.pos);
+            System.exit(-1);
+        }
+        $registre = TS.obtenir($id.text);
+        if (!$registre.getTipusRegistre().equals("VARIABLE") &&
+            !$registre.getTipus().equals("I")) {
+            error = true;
+            System.err.println("Error semàntic: la variable de control d'un per ha de ser entera. Linia " + $id.line + ":" + $id.pos);
+            System.exit(-1);
+        }
+    } de=TK_PC_DE ex=expressio {
+        if (!$ex.type.equals("I")) {
+            error = true;
+            System.err.println("Error semàntic: l'expressió d'inici d'un per ha de ser entera. Linia " + $de.line + ":" + $de.pos);
+            System.exit(-1);
+        }
+    } fins=TK_PC_FINS exfi=expressio {
+        if (!$exfi.type.equals("I")) {
+            error = true;
+            System.err.println("Error semàntic: l'expressió de fi d'un per ha de ser entera. Linia " + $fins.line + ":" + $fins.pos);
+            System.exit(-1);
+        }
+    } TK_PC_FER (se=sentencia {
+        $tradPer = $se.trad;
+    })* TK_PC_FPER {
+        Long addrId = $registre.getAdreca();
+        Long midaSaltFi = new Long($tradPer.size()+9);
+        Long midaSaltInici = new Long(-$tradPer.size()-$ex.trad.size()-9);
+
+        $trad.addAll($ex.trad);
+        $trad.add(BC.DUP); // duplica l'expressio inicial i la posa a la pila
+        $trad.add(BC.ISTORE); // guarda el valor inicial duplicat
+        $trad.add(addrId);
+
+        $trad.addAll($exfi.trad);
+        $trad.add(BC.IF_ICMPGT);
+        $trad.add(BC.nByte(midaSaltFi,2));
+        $trad.add(BC.nByte(midaSaltFi,1));
+
+        $trad.addAll($tradPer);
+
+        $trad.add(BC.ILOAD); // recupera valor inicial per sumar-li el pas
+        $trad.add(addrId);
+        $trad.add($pas); // valor 1
+        $trad.add(BC.IADD); // suma els dos valors top de la pila
+
+        $trad.add(BC.GOTO);
+        $trad.add(BC.nByte(midaSaltInici,2));
+        $trad.add(BC.nByte(midaSaltInici,1));
+    };
+
+repetir returns [Vector<Long> trad] locals [Vector<Long> tradRep]
+    @init {
+       $trad = new Vector<Long>();
+       $tradRep = new Vector<Long>();
+    }: TK_PC_REPETIR (se=sentencia {
+        $tradRep = $se.trad;
+    })+ r=TK_PC_FINSQUE ex=expressio {
+        if (!$ex.type.equals("Z")) {
+            error = true;
+            System.err.println("Error semàntic: l'expressió ha de ser tipus booleana. Linia " + $r.line + ":" + $r.pos);
+            System.exit(-1);
+    }
+    } TK_SEMI{
+        Long midaSaltInici = new Long(-$tradRep.size()-$ex.trad.size());
+        $trad.addAll($tradRep);
+        $trad.addAll($ex.trad);
+        $trad.add(BC.IFEQ);
+        $trad.add(BC.nByte(midaSaltInici,2));
+        $trad.add(BC.nByte(midaSaltInici,1));
+    };
+
+crida_accio: TK_LPAREN (expressio (TK_COMMA expressio)*)? TK_RPAREN TK_SEMI;
 
 tipus_tots returns [String type]:
         tb=tipus_basics {$type=$tb.type;}
@@ -392,7 +595,7 @@ tipus_tots returns [String type]:
                 System.exit(-1);
             }
             Registre registre = TS.obtenir($id.text);
-            if (!registre.getTipusRegistre().equals("TIPUSNOU")) {
+            if (!registre.getTipus().equals("TIPUSNOU")) {
                 error = true;
                 System.err.println("El lexema " + $id.text + " ha de ser d'un tipus nou. Linia " + $id.line + ":" + $id.pos);
                 System.exit(-1);
@@ -404,19 +607,19 @@ tipus_basics returns [String type]:
     TK_PC_ENTER {$type="I";}
     | TK_PC_CAR {$type="C";}
     | TK_PC_REAL {$type="F";}
-    | TK_PC_BOOL {$type="B";}
+    | TK_PC_BOOL {$type="Z";}
     | TK_PC_DATA {$type="D";};
 
 
 valor_constant returns [String type, String value]:
-    val = TK_ENTER { $type = "enter"; $value = $val.text; }
-    | val = TK_REAL { $type = "real"; $value = $val.text; }
-    | val = TK_CAR { $type = "car"; $value = $val.text; }
-    | val = TK_BOOLEA { $type = "bool"; $value = $val.text; }
-    | val = TK_DATA { $type = "data"; $value = $val.text; }
-    | val = TK_STRING { $type = "string"; $value = $val.text; }
-    | sign = TK_OP_MINUS val = TK_ENTER { $type = "enter"; $value = $sign.text + $val.text}
-    | sign = TK_OP_MINUS val = TK_REAL { $type = "real"; $value = $sign.text + $val.text};
+    val = TK_ENTER { $type = "I"; $value = $val.text; }
+    | val = TK_REAL { $type = "F"; $value = $val.text; }
+    | val = TK_CAR { $type = "C"; $value = $val.text; }
+    | val = TK_BOOLEA { $type = "Z"; $value = $val.text; }
+    | val = TK_DATA { $type = "D"; $value = $val.text; }
+    | val = TK_STRING { $type = "S"; $value = $val.text; }
+    | sign = TK_OP_MINUS val = TK_ENTER { $type = "I"; $value = $sign.text + $val.text; }
+    | sign = TK_OP_MINUS val = TK_REAL { $type = "F"; $value = $sign.text + $val.text; };
 
 
 
@@ -481,7 +684,6 @@ DIGIT_COMPLET : '0' .. '9' ;
 fragment
 LLETRA : 'a' .. 'z' | 'A' .. 'Z' ;
 TK_ENTER : '0' | DIGIT (DIGIT|'0')* ;
-TK_NATURAL : DIGIT (DIGIT|'0')* ;
 TK_TIPUS : TK_PC_ENTER | TK_PC_REAL | TK_PC_CAR | TK_PC_BOOL | TK_PC_DATA ;
 TK_PC_ENTER : 'enter';
 TK_PC_REAL : 'real';
